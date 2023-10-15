@@ -21,6 +21,7 @@ class Chatbot:
         content = ""
         async for token in response:
             content += token.choices[0].delta.get("content", "")
+            #print() for a more instant response.
         return content.strip()
 
     def chatiteration(self):
