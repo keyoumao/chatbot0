@@ -1,45 +1,53 @@
-from langchain.chains import ConversationChain, ConversationalRetrievalChain
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory, ConversationSummaryMemory
-from langchain.document_loaders import DirectoryLoader
+# Load documents
+from langchain.document_loaders import WebBaseLoader
+url1 = "https://lilianweng.github.io/posts/2023-06-23-agent/"
+url2 = "https://doi.org/10.48550/arXiv.2303.17564"
+url3 = "https://www.bloomberg.com/company/press/bloomberggpt-50-billion-parameter-llm-tuned-finance/"
+url4 = "https://raw.githubusercontent.com/handsomezebra/chatbot-example/main/backend_langchain/instruct_gpt.txt"
+url5 = "https://arxiv.org/abs/2302.13971v1"
+loader = WebBaseLoader([url1,url2,url3,url4,url5])
+
+# Split documents
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+text_splitter = RecursiveCharacterTextSplitter(chunk_size = 1000, chunk_overlap = 0)
+splits = text_splitter.split_documents(loader.load())
 
-class LangChainChatbot:
+# Embed and store splits
+from langchain.vectorstores import Chroma
+from langchain.embeddings import OpenAIEmbeddings
+vectorstore = Chroma.from_documents(documents=splits,embedding=OpenAIEmbeddings())
+retriever = vectorstore.as_retriever()
 
-    def __init__(self):
-        print("Loading documents")
-        loader = DirectoryLoader('./', glob="*.txt")
-        documents = loader.load()
+# Prompt 
+# https://smith.langchain.com/hub/rlm/rag-prompt
+from langchain import hub
+rag_prompt = hub.pull("rlm/rag-prompt")
 
-        # Split documents into chunks
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        chunks = text_splitter.split_documents(documents)
+# LLM
+from langchain.chat_models import ChatOpenAI
+llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
-        print("Creating embeddings")
-        # Create embeddings for each chunk
-        embeddings = OpenAIEmbeddings()
-        vectorstore = Chroma.from_documents(chunks, embeddings)
-        retriever = vectorstore.as_retriever()
+# RAG chain 
+#from langchain.schema.runnable import RunnablePassthrough
+#rag_chain = (
+ #   {"context": retriever, "question": RunnablePassthrough()} 
+ #   | rag_prompt 
+ #   | llm 
+#)
+# Conversation chain
+from langchain.chains import ConversationChain, ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory, ConversationSummaryMemory
 
-        print("Creating chains")
-        llm = ChatOpenAI()
-        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-        conversation = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, memory=memory, verbose=True)
+print("Creating chains")
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+conversation = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, memory=memory, verbose=True)
 
-        self.chain = ConversationChain(llm=llm, memory=memory, verbose=True)
-
-    def chat(self):
-        print("Hello! I'm your AI assistant created by LangChain. Let's have a conversation!")
-        while True:
-            user_input = input("> ")
-            if user_input.lower() == "quit":
-                break
-            ai_output = self.chain(user_input)
-            print(ai_output, end='')
-        print("Goodbye!")
-
-if __name__ == "__main__":
-    chatbot = LangChainChatbot()
-    chatbot.chat()
+# Loop to keep the chatbot running
+exit_conditions = (":q", "quit", "exit")
+while True:
+    query = input(">type ':q','quit' or 'exit' to end conversation ")
+    if query in exit_conditions:
+        break
+    else:
+        response = conversation(query)
+        print(response["answer"])

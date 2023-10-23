@@ -2,90 +2,53 @@ from langchain.document_loaders import WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.retrievers import SVMRetriever
-from langchain.prompts import ChatPromptTemplate
-from langchain.chat_models import ChatOpenAI
-from langchain.schema.output_parser import StrOutputParser
-from langchain.chains import ConversationalRetrievalChain
-from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema import HumanMessage, AIMessage, SystemMessage
-from langchain.prompts import (ChatPromptTemplate, MessagesPlaceholder, 
-                               SystemMessagePromptTemplate, HumanMessagePromptTemplate)
-from langchain.memory import (ConversationSummaryMemory, ConversationSummaryBufferMemory, 
-                             ConversationBufferMemory)
-# Prompt 
-# https://smith.langchain.com/hub/rlm/rag-prompt
 from langchain import hub
-#from langchain.schema import ContextSchema, QuestionSchema
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import ConversationChain, ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory, ConversationSummaryMemory
 
+class Chatbot:
+    def __init__(self, urls=None):
+        if urls is None:
+            urls = [
+                "https://lilianweng.github.io/posts/2023-06-23-agent/",
+                "https://medium.com/codex/bloomberggpt-the-first-large-language-model-for-finance-61cc92075075",
+                "https://raw.githubusercontent.com/handsomezebra/chatbot-example/main/backend_langchain/instruct_gpt.txt",
+                "https://onlinelibrary.wiley.com/doi/full/10.1111/1911-3846.12832?casa_token=-WaGu4knKf8AAAAA%3Akxm2cS_VYEKHcg1j4yhkvq8VDoV5s6IWG_82sUvU1i7XEriwN5n3_kARJWWXRF3hL5jxI9vph7q0ynMO"
+            ]
 
-
-
-class LangChainChatbot:
-
-    def __init__(self):
         # Load documents
-        self.loader = WebBaseLoader("https://lilianweng.github.io/posts/2023-06-23-agent/")
-        self.data = self.loader.load()
-        
+        loader = WebBaseLoader(urls)
+
         # Split documents
-        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=0)
-        self.splits = self.text_splitter.split_documents(self.loader.load())
-        self.all_splits = self.text_splitter.split_documents(self.data)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+        splits = text_splitter.split_documents(loader.load())
 
         # Embed and store splits
-        self.embeddings = OpenAIEmbeddings()
-        self.vectorstore = Chroma.from_documents(documents=self.splits, embedding=self.embeddings)
-        self.retriever = self.vectorstore.as_retriever()
-        
-        # Prompt
-        #self.context_schema = ContextSchema(text="{context}")
-        #self.question_schema = QuestionSchema()
-  
-        self.prompt = ChatPromptTemplate(
-            messages=[
-                SystemMessagePromptTemplate.from_template(
-                    "You are a nice chatbot having a conversation with a human."
-                ),
-                MessagesPlaceholder(variable_name="chat_history"),
-                HumanMessagePromptTemplate.from_template("{question}")
-            ]
-        )
+        vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
+        retriever = vectorstore.as_retriever()
 
-           # Memory Setup
-        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+        # Prompt 
+        rag_prompt = hub.pull("rlm/rag-prompt")
 
         # LLM
-        self.llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.3)
-        
-        # RAG chain
-        self.chain = ConversationalRetrievalChain(retriever=self.retriever, prompt=self.prompt, llm=self.llm, verbose=True)
-        # this one has a problem of saving chat history!
+        llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
+        # Conversation chain
+        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+        self.conversation = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, memory=memory, verbose=True)
 
-
-    def chat(self):
-        print("Hello! I'm your AI assistant created by LangChain. Let's have a conversation!\\n Type 'quit' to end conversation")
-        #self.context_schema = ContextSchema(text="{context}")
-        #self.question_schema = QuestionSchema()
+    def run(self):
+        # Loop to keep the chatbot running
+        exit_conditions = (":q", "quit", "exit")
         while True:
-            user_input = input("You: ")
-            if user_input.lower() == "quit":
+            query = input(">type ':q','quit' or 'exit' to end conversation ")
+            if query in exit_conditions:
                 break
-            # Update question schema with user input
-            #self.question_schema.update(text=user_input)
-               # Construct prompt each loop
-            #self.prompt = ChatPromptTemplate(messages=[self.context_schema,self.question_schema])
-               
-            ai_output = self.chain(user_input)
-            #ai_output=self.chain(prompt=prompt, context={"context": ""}, question=user_input)
-            
-            print(ai_output["answer"], end='')
+            else:
+                response = self.conversation(query)
+                print(response["answer"])
 
-        print("Goodbye!")
-        
 if __name__ == "__main__":
-    chatbot = LangChainChatbot()
-    chatbot.chat()
-
-
+    bot = Chatbot()
+    bot.run()
