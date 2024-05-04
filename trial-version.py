@@ -1,3 +1,5 @@
+# use easy model to call the SDK.
+
 import time
 import openai
 
